@@ -46,11 +46,11 @@ operator<(GraphEdge e0, GraphEdge e1)
 }
 
 size_t
-push_node(ENFA *nfa)
+push_node(ENFA &nfa)
 {
-  size_t node_idx = nfa->nodes.size();
+  size_t node_idx = nfa.nodes.size();
 
-  nfa->nodes.push_back({ });
+  nfa.nodes.push_back({ });
 
   return node_idx;
 }
@@ -70,8 +70,8 @@ parse_pattern(const char *str)
       if (str[1] == '*')
         {
           size_t const subexpr_start = nfa.end;
-          size_t subexpr_end = push_node(&nfa);
-          size_t end = push_node(&nfa);
+          size_t subexpr_end = push_node(nfa);
+          size_t end = push_node(nfa);
 
           nfa.nodes[subexpr_start].insert({ subexpr_end, label });
           nfa.nodes[subexpr_end].insert({ subexpr_start, Edge_Eps });
@@ -84,7 +84,7 @@ parse_pattern(const char *str)
         }
       else
         {
-          size_t end = push_node(&nfa);
+          size_t end = push_node(nfa);
 
           nfa.nodes[nfa.end].insert({ end, label });
           nfa.end = end;
@@ -98,36 +98,36 @@ parse_pattern(const char *str)
 }
 
 void
-compute_closures_aux(ENFA *nfa, vector<bool> &visited, size_t node_idx)
+compute_closures_aux(ENFA &nfa, vector<bool> &visited, size_t node_idx)
 {
   visited[node_idx] = true;
 
-  GraphNode *edges = &nfa->nodes[node_idx];
+  GraphNode &edges = nfa.nodes[node_idx];
 
-  for (auto node: *edges)
+  for (auto node: edges)
     if (!visited[node.dst] && node.label == Edge_Eps)
       compute_closures_aux(nfa, visited, node.dst);
 
-  ENFAclosure *closure = &nfa->closures[node_idx];
-  closure->insert(node_idx);
+  ENFAclosure &closure = nfa.closures[node_idx];
+  closure.insert(node_idx);
 
-  for (auto node: *edges)
+  for (auto node: edges)
     {
       if (node.label == Edge_Eps)
         {
-          auto *set = &nfa->closures[node.dst];
-          closure->insert(set->begin(), set->end());
+          auto &set = nfa.closures[node.dst];
+          closure.insert(set.begin(), set.end());
         }
     }
 }
 
 void
-compute_closures(ENFA *nfa)
+compute_closures(ENFA &nfa)
 {
   vector<bool> visited;
-  visited.resize(nfa->nodes.size());
+  visited.resize(nfa.nodes.size());
 
-  for (size_t i = 0; i < nfa->nodes.size(); i++)
+  for (size_t i = 0; i < nfa.nodes.size(); i++)
     if (!visited[i])
       compute_closures_aux(nfa, visited, i);
 }
@@ -139,13 +139,13 @@ insert_closure(std::set<size_t> &set, std::set<size_t> &closure)
 }
 
 bool
-are_sets_equal(set<size_t> *left, set<size_t> *right)
+are_sets_equal(set<size_t> &left, set<size_t> &right)
 {
-  if (left->size() != right->size())
+  if (left.size() != right.size())
     return false;
 
-  for (auto lit = left->begin(), rit = right->begin();
-       lit != left->end();
+  for (auto lit = left.begin(), rit = right.begin();
+       lit != left.end();
        lit++, rit++)
     if (*lit != *rit)
       return false;
@@ -157,7 +157,7 @@ size_t
 find_repeating_state(vector<set<size_t>> &states)
 {
   for (size_t i = 0; i + 1 < states.size(); i++)
-    if (are_sets_equal(&states[i], &states.back()))
+    if (are_sets_equal(states[i], states.back()))
       return i;
 
   return -1;
@@ -167,7 +167,7 @@ DFA
 create_dfa_from_regexp(const char *pattern)
 {
   ENFA nfa = parse_pattern(pattern);
-  compute_closures(&nfa);
+  compute_closures(nfa);
   DFA dfa;
   dfa.states.push_back({ });
 
@@ -190,10 +190,10 @@ create_dfa_from_regexp(const char *pattern)
 
           for (size_t node_idx: dfa_states[i])
             {
-              auto *set = &nfa.nodes[node_idx];
+              auto &set = nfa.nodes[node_idx];
 
-              for (auto it = set->lower_bound({ 0, label });
-                   it != set->end() && it->label == label;
+              for (auto it = set.lower_bound({ 0, label });
+                   it != set.end() && it->label == label;
                    it++)
                 insert_closure(dfa_states.back(), nfa.closures[it->dst]);
             }
