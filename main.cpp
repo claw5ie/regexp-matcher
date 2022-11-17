@@ -11,28 +11,33 @@ using namespace std;
 
 enum EdgeType
   {
-    Edge_Eps = -2,
-    Edge_Any = -1
+    Edge_Eps = -1,
   };
 
-struct ENFAedge
+struct GraphEdge
 {
   size_t dst;
   char label;
 };
 
-using ENFAnode = set<ENFAedge>;
+using GraphNode = set<GraphEdge>;
 using ENFAclosure = set<size_t>;
 
 struct ENFA
 {
   size_t start, end;
-  vector<ENFAnode> nodes;
+  vector<GraphNode> nodes;
   vector<ENFAclosure> closures;
 };
 
+struct DFA
+{
+  vector<GraphNode> states;
+  set<size_t> final_states;
+};
+
 bool
-operator<(ENFAedge e0, ENFAedge e1)
+operator<(GraphEdge e0, GraphEdge e1)
 {
   if (e0.label == e1.label)
     return e0.dst < e1.dst;
@@ -60,7 +65,7 @@ parse_pattern(const char *str)
 
   while (*str != '\0')
     {
-      char label = *str == '?' ? (char)Edge_Any : *str;
+      char label = *str;
 
       if (str[1] == '*')
         {
@@ -97,7 +102,7 @@ compute_closures_aux(ENFA *nfa, vector<bool> &visited, size_t node_idx)
 {
   visited[node_idx] = true;
 
-  ENFAnode *edges = &nfa->nodes[node_idx];
+  GraphNode *edges = &nfa->nodes[node_idx];
 
   for (auto node: *edges)
     if (!visited[node.dst] && node.label == Edge_Eps)
@@ -134,48 +139,99 @@ insert_closure(std::set<size_t> &set, std::set<size_t> &closure)
 }
 
 bool
-isMatch(char *s, char *p)
+are_sets_equal(set<size_t> *left, set<size_t> *right)
 {
-  ENFA nfa = parse_pattern(p);
+  if (left->size() != right->size())
+    return false;
+
+  for (auto lit = left->begin(), rit = right->begin();
+       lit != left->end();
+       lit++, rit++)
+    if (*lit != *rit)
+      return false;
+
+  return true;
+}
+
+size_t
+find_repeating_state(vector<set<size_t>> &states)
+{
+  for (size_t i = 0; i + 1 < states.size(); i++)
+    if (are_sets_equal(&states[i], &states.back()))
+      return i;
+
+  return -1;
+}
+
+DFA
+create_dfa_from_regexp(const char *pattern)
+{
+  ENFA nfa = parse_pattern(pattern);
   compute_closures(&nfa);
+  DFA dfa;
+  dfa.states.push_back({ });
 
-  set<size_t> front, back;
+  vector<set<size_t>> dfa_states;
+  dfa_states.push_back({ });
+  insert_closure(dfa_states[0], nfa.closures[nfa.start]);
 
-  insert_closure(front, nfa.closures[nfa.start]);
-
-  while (*s != '\0')
+  for (size_t i = 0; i < dfa_states.size(); i++)
     {
-      for (auto node: front)
+      set<char> labels;
+
+      for (size_t node_idx: dfa_states[i])
+        for (auto node: nfa.nodes[node_idx])
+          if (node.label != Edge_Eps)
+            labels.insert(node.label);
+
+      for (char label: labels)
         {
-          auto *set = &nfa.nodes[node];
-          auto end = set->end();
-          auto it = set->lower_bound({ 0, *s });
+          dfa_states.push_back({ });
 
-          for (; it != end && it->label == *s; it++)
-            insert_closure(back, nfa.closures[it->dst]);
+          for (size_t node_idx: dfa_states[i])
+            {
+              auto *set = &nfa.nodes[node_idx];
 
-          it = set->lower_bound({ 0, Edge_Any });
+              for (auto it = set->lower_bound({ 0, label });
+                   it != set->end() && it->label == label;
+                   it++)
+                insert_closure(dfa_states.back(), nfa.closures[it->dst]);
+            }
 
-          for (; it != end && it->label == Edge_Any; it++)
-            insert_closure(back, nfa.closures[it->dst]);
+          size_t repeating_state
+            = find_repeating_state(dfa_states);
+
+          if (repeating_state != (size_t)-1)
+            {
+              dfa_states.pop_back();
+              dfa.states[i].insert({ repeating_state, label });
+            }
+          else
+            {
+              dfa.states.push_back({ });
+              dfa.states[i].insert({ dfa.states.size() - 1, label });
+            }
         }
 
-      front.clear();
-      front.swap(back);
-      s++;
+      for (size_t node_idx: dfa_states[i])
+        {
+          if (node_idx == nfa.end)
+            {
+              dfa.final_states.insert(i);
+              break;
+            }
+        }
     }
 
-  for (auto node: front)
-    if (node == nfa.end)
-      return true;
-
-  return false;
+  return dfa;
 }
 
 int
-main(int argc, char **argv)
+main(void)
 {
-  assert(argc == 3);
+  DFA dfa = create_dfa_from_regexp("a*");
 
-  printf("%s\n", isMatch(argv[1], argv[2]) ? "accepted" : "rejected");
+  for (size_t i = 0; i < dfa.states.size(); i++)
+    for (auto edge: dfa.states[i])
+      printf("%zu - %c -> %zu\n", i, edge.label, edge.dst);
 }
