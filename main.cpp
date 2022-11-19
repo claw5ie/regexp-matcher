@@ -27,7 +27,7 @@ using ENFAclosure = set<size_t>;
 struct ENFA
 {
   size_t start, end;
-  vector<GraphNode> nodes;
+  vector<GraphNode> states;
   vector<ENFAclosure> closures;
 };
 
@@ -49,9 +49,9 @@ operator<(GraphEdge e0, GraphEdge e1)
 size_t
 push_node(ENFA &nfa)
 {
-  size_t node_idx = nfa.nodes.size();
+  size_t node_idx = nfa.states.size();
 
-  nfa.nodes.push_back({ });
+  nfa.states.push_back({ });
 
   return node_idx;
 }
@@ -92,10 +92,10 @@ parse_next_level(ENFA &nfa)
               size_t subexpr_end = push_node(nfa);
               size_t end = push_node(nfa);
 
-              nfa.nodes[subexpr_start].insert({ subexpr_end, label });
-              nfa.nodes[subexpr_end].insert({ subexpr_start, Edge_Eps });
-              nfa.nodes[subexpr_start].insert({ end, Edge_Eps });
-              nfa.nodes[subexpr_end].insert({ end, Edge_Eps });
+              nfa.states[subexpr_start].insert({ subexpr_end, label });
+              nfa.states[subexpr_end].insert({ subexpr_start, Edge_Eps });
+              nfa.states[subexpr_start].insert({ end, Edge_Eps });
+              nfa.states[subexpr_end].insert({ end, Edge_Eps });
               left.end = end;
 
               while (*++at == '*')
@@ -105,7 +105,7 @@ parse_next_level(ENFA &nfa)
             {
               size_t end = push_node(nfa);
 
-              nfa.nodes[left.end].insert({ end, label });
+              nfa.states[left.end].insert({ end, label });
               left.end = end;
               ++at;
             }
@@ -114,8 +114,8 @@ parse_next_level(ENFA &nfa)
 
   if (*at == '*')
     {
-      nfa.nodes[left.start].insert({ left.end, Edge_Eps });
-      nfa.nodes[left.end].insert({ left.start, Edge_Eps });
+      nfa.states[left.start].insert({ left.end, Edge_Eps });
+      nfa.states[left.end].insert({ left.start, Edge_Eps });
 
       while (*++at == '*')
         ;
@@ -137,10 +137,10 @@ parse_pattern_aux(ENFA &nfa)
       size_t start = push_node(nfa);
       size_t end = push_node(nfa);
 
-      nfa.nodes[start].insert({ left.start, Edge_Eps });
-      nfa.nodes[start].insert({ right.start, Edge_Eps });
-      nfa.nodes[left.end].insert({ end, Edge_Eps });
-      nfa.nodes[right.end].insert({ end, Edge_Eps });
+      nfa.states[start].insert({ left.start, Edge_Eps });
+      nfa.states[start].insert({ right.start, Edge_Eps });
+      nfa.states[left.end].insert({ end, Edge_Eps });
+      nfa.states[right.end].insert({ end, Edge_Eps });
       left.start = start;
       left.end = end;
     }
@@ -152,14 +152,14 @@ ENFA
 parse_pattern(const char *str)
 {
   ENFA nfa;
-  nfa.nodes.reserve(32);
+  nfa.states.reserve(32);
 
   at = str;
   StatePair regexp = parse_pattern_aux(nfa);
   nfa.start = regexp.start;
   nfa.end = regexp.end;
 
-  nfa.closures.resize(nfa.nodes.size());
+  nfa.closures.resize(nfa.states.size());
 
   return nfa;
 }
@@ -169,7 +169,7 @@ compute_closures_aux(ENFA &nfa, vector<bool> &visited, size_t node_idx)
 {
   visited[node_idx] = true;
 
-  GraphNode &edges = nfa.nodes[node_idx];
+  GraphNode &edges = nfa.states[node_idx];
 
   for (auto node: edges)
     if (!visited[node.dst] && node.label == Edge_Eps)
@@ -192,9 +192,9 @@ void
 compute_closures(ENFA &nfa)
 {
   vector<bool> visited;
-  visited.resize(nfa.nodes.size());
+  visited.resize(nfa.states.size());
 
-  for (size_t i = 0; i < nfa.nodes.size(); i++)
+  for (size_t i = 0; i < nfa.states.size(); i++)
     if (!visited[i])
       compute_closures_aux(nfa, visited, i);
 }
@@ -247,7 +247,7 @@ create_dfa_from_regexp(const char *pattern)
       set<char> labels;
 
       for (size_t node_idx: dfa_states[i])
-        for (auto node: nfa.nodes[node_idx])
+        for (auto node: nfa.states[node_idx])
           if (node.label != Edge_Eps)
             labels.insert(node.label);
 
@@ -257,7 +257,7 @@ create_dfa_from_regexp(const char *pattern)
 
           for (size_t node_idx: dfa_states[i])
             {
-              auto &set = nfa.nodes[node_idx];
+              auto &set = nfa.states[node_idx];
 
               for (auto it = set.lower_bound({ 0, label });
                    it != set.end() && it->label == label;
@@ -315,10 +315,10 @@ main(int argc, char **argv)
   //      << "\nfinal state:   "
   //      << nfa.end
   //      << "\nstate count:   "
-  //      << nfa.nodes.size()
+  //      << nfa.states.size()
   //      << "\n\n";
 
-  // for (size_t i = 0; i < nfa.nodes.size(); i++)
-  //   for (auto edge: nfa.nodes[i])
+  // for (size_t i = 0; i < nfa.states.size(); i++)
+  //   for (auto edge: nfa.states[i])
   //     printf("%zu - %c -> %zu\n", i, edge.label == -1 ? 'e' : edge.label, edge.dst);
 }
