@@ -308,7 +308,7 @@ main(int argc, char **argv)
       printf("%zu - %c -> %zu\n", i, edge.label, edge.dst);
 
   // Code for ENFA debugging
-  // ENFA nfa = parse_pattern("(a)*|b");
+  // ENFA nfa = parse_pattern(argc <= 1 ? "b|a" : argv[1]);
 
   // cout << "initial state: "
   //      << nfa.start
