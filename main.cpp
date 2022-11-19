@@ -172,26 +172,11 @@ insert_closure(std::set<size_t> &set, std::set<size_t> &closure)
   set.insert(closure.begin(), closure.end());
 }
 
-bool
-are_sets_equal(set<size_t> &left, set<size_t> &right)
-{
-  if (left.size() != right.size())
-    return false;
-
-  for (auto lit = left.begin(), rit = right.begin();
-       lit != left.end();
-       lit++, rit++)
-    if (*lit != *rit)
-      return false;
-
-  return true;
-}
-
 size_t
 find_repeating_state(vector<set<size_t>> &states)
 {
   for (size_t i = 0; i + 1 < states.size(); i++)
-    if (are_sets_equal(states[i], states.back()))
+    if (states[i] == states.back())
       return i;
 
   return -1;
