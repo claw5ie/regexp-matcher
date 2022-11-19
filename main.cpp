@@ -1,3 +1,4 @@
+#include <iostream>
 #include <cstdio>
 #include <cstdlib>
 #include <vector>
@@ -55,42 +56,108 @@ push_node(ENFA &nfa)
   return node_idx;
 }
 
+struct StatePair
+{
+  size_t start, end;
+};
+
+static const char *at;
+
+StatePair
+parse_pattern_aux(ENFA &nfa);
+
+StatePair
+parse_next_level(ENFA &nfa)
+{
+  StatePair left;
+
+  if (*at == '(')
+    {
+      ++at;
+      left = parse_pattern_aux(nfa);
+      assert(*at == ')');
+      ++at;
+    }
+  else
+    {
+      left.start = left.end = push_node(nfa);
+
+      while (*at != '\0' && *at != '|' && *at != ')')
+        {
+          char label = *at;
+
+          if (at[1] == '*')
+            {
+              size_t const subexpr_start = left.end;
+              size_t subexpr_end = push_node(nfa);
+              size_t end = push_node(nfa);
+
+              nfa.nodes[subexpr_start].insert({ subexpr_end, label });
+              nfa.nodes[subexpr_end].insert({ subexpr_start, Edge_Eps });
+              nfa.nodes[subexpr_start].insert({ end, Edge_Eps });
+              nfa.nodes[subexpr_end].insert({ end, Edge_Eps });
+              left.end = end;
+
+              while (*++at == '*')
+                ;
+            }
+          else
+            {
+              size_t end = push_node(nfa);
+
+              nfa.nodes[left.end].insert({ end, label });
+              left.end = end;
+              ++at;
+            }
+        }
+    }
+
+  if (*at == '*')
+    {
+      nfa.nodes[left.start].insert({ left.end, Edge_Eps });
+      nfa.nodes[left.end].insert({ left.start, Edge_Eps });
+
+      while (*++at == '*')
+        ;
+    }
+
+  return left;
+}
+
+StatePair
+parse_pattern_aux(ENFA &nfa)
+{
+  StatePair left = parse_next_level(nfa);
+
+  while (*at == '|')
+    {
+      ++at;
+      StatePair right = parse_next_level(nfa);
+
+      size_t start = push_node(nfa);
+      size_t end = push_node(nfa);
+
+      nfa.nodes[start].insert({ left.start, Edge_Eps });
+      nfa.nodes[start].insert({ right.start, Edge_Eps });
+      nfa.nodes[left.end].insert({ end, Edge_Eps });
+      nfa.nodes[right.end].insert({ end, Edge_Eps });
+      left.start = start;
+      left.end = end;
+    }
+
+  return left;
+}
+
 ENFA
 parse_pattern(const char *str)
 {
   ENFA nfa;
-  nfa.start = nfa.end = 0;
   nfa.nodes.reserve(32);
-  nfa.nodes.push_back({ });
 
-  while (*str != '\0')
-    {
-      char label = *str;
-
-      if (str[1] == '*')
-        {
-          size_t const subexpr_start = nfa.end;
-          size_t subexpr_end = push_node(nfa);
-          size_t end = push_node(nfa);
-
-          nfa.nodes[subexpr_start].insert({ subexpr_end, label });
-          nfa.nodes[subexpr_end].insert({ subexpr_start, Edge_Eps });
-          nfa.nodes[subexpr_start].insert({ end, Edge_Eps });
-          nfa.nodes[subexpr_end].insert({ end, Edge_Eps });
-          nfa.end = end;
-
-          while (*++str == '*')
-            ;
-        }
-      else
-        {
-          size_t end = push_node(nfa);
-
-          nfa.nodes[nfa.end].insert({ end, label });
-          nfa.end = end;
-          ++str;
-        }
-    }
+  at = str;
+  StatePair regexp = parse_pattern_aux(nfa);
+  nfa.start = regexp.start;
+  nfa.end = regexp.end;
 
   nfa.closures.resize(nfa.nodes.size());
 
@@ -227,11 +294,31 @@ create_dfa_from_regexp(const char *pattern)
 }
 
 int
-main(void)
+main(int argc, char **argv)
 {
-  DFA dfa = create_dfa_from_regexp("a*");
+  DFA dfa = create_dfa_from_regexp(argc <= 1 ? "b|a" : argv[1]);
+
+  cout << "final states: ";
+  for (size_t state: dfa.final_states)
+    cout << state << ' ';
+  cout << '\n' << '\n';
 
   for (size_t i = 0; i < dfa.states.size(); i++)
     for (auto edge: dfa.states[i])
       printf("%zu - %c -> %zu\n", i, edge.label, edge.dst);
+
+  // Code for ENFA debugging
+  // ENFA nfa = parse_pattern("(a)*|b");
+
+  // cout << "initial state: "
+  //      << nfa.start
+  //      << "\nfinal state:   "
+  //      << nfa.end
+  //      << "\nstate count:   "
+  //      << nfa.nodes.size()
+  //      << "\n\n";
+
+  // for (size_t i = 0; i < nfa.nodes.size(); i++)
+  //   for (auto edge: nfa.nodes[i])
+  //     printf("%zu - %c -> %zu\n", i, edge.label == -1 ? 'e' : edge.label, edge.dst);
 }
