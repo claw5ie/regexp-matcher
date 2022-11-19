@@ -1,41 +1,13 @@
+#include "main.hpp"
 #include <iostream>
 #include <cstdio>
 #include <cstdlib>
-#include <vector>
-#include <set>
 #include <cstring>
 #include <cstdbool>
 #include <cstdint>
 #include <cassert>
 
 using namespace std;
-
-enum EdgeType
-  {
-    Edge_Eps = -1,
-  };
-
-struct GraphEdge
-{
-  size_t dst;
-  char label;
-};
-
-using GraphNode = set<GraphEdge>;
-using ENFAclosure = set<size_t>;
-
-struct ENFA
-{
-  size_t start, end;
-  vector<GraphNode> states;
-  vector<ENFAclosure> closures;
-};
-
-struct DFA
-{
-  vector<GraphNode> states;
-  set<size_t> final_states;
-};
 
 bool
 operator<(GraphEdge e0, GraphEdge e1)
@@ -55,11 +27,6 @@ push_node(ENFA &nfa)
 
   return node_idx;
 }
-
-struct StatePair
-{
-  size_t start, end;
-};
 
 static const char *at;
 
