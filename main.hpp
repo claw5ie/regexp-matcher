@@ -16,19 +16,19 @@ struct GraphEdge
   char label;
 };
 
-using GraphNode = std::set<GraphEdge>;
+using GraphState = std::set<GraphEdge>;
 using ENFAclosure = std::set<size_t>;
 
 struct ENFA
 {
   size_t start, end;
-  std::vector<GraphNode> states;
+  std::vector<GraphState> states;
   std::vector<ENFAclosure> closures;
 };
 
 struct DFA
 {
-  std::vector<GraphNode> states;
+  std::vector<GraphState> states;
   std::set<size_t> final_states;
 };
 

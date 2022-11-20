@@ -19,13 +19,49 @@ operator<(GraphEdge e0, GraphEdge e1)
 }
 
 size_t
-push_node(ENFA &nfa)
+push_state(ENFA &nfa)
 {
-  size_t node_idx = nfa.states.size();
+  size_t state_idx = nfa.states.size();
 
   nfa.states.push_back({ });
 
-  return node_idx;
+  return state_idx;
+}
+
+void
+compute_closures_aux(ENFA &nfa, vector<bool> &visited, size_t state_idx)
+{
+  visited[state_idx] = true;
+
+  GraphState &edges = nfa.states[state_idx];
+
+  for (auto state: edges)
+    if (!visited[state.dst] && state.label == Edge_Eps)
+      compute_closures_aux(nfa, visited, state.dst);
+
+  ENFAclosure &closure = nfa.closures[state_idx];
+  closure.insert(state_idx);
+
+  for (auto state: edges)
+    {
+      if (state.label == Edge_Eps)
+        {
+          auto &set = nfa.closures[state.dst];
+          closure.insert(set.begin(), set.end());
+        }
+    }
+}
+
+void
+compute_closures(ENFA &nfa)
+{
+  nfa.closures.resize(nfa.states.size());
+  vector<bool> visited;
+  visited.resize(nfa.states.size());
+
+  for (size_t i = 0; i < nfa.states.size(); i++)
+    if (!visited[i])
+      compute_closures_aux(nfa, visited, i);
 }
 
 static const char *at;
@@ -47,7 +83,7 @@ parse_next_level(ENFA &nfa)
     }
   else
     {
-      left.start = left.end = push_node(nfa);
+      left.start = left.end = push_state(nfa);
 
       while (*at != '\0' && *at != '|' && *at != ')')
         {
@@ -56,8 +92,8 @@ parse_next_level(ENFA &nfa)
           if (at[1] == '*')
             {
               size_t const subexpr_start = left.end;
-              size_t subexpr_end = push_node(nfa);
-              size_t end = push_node(nfa);
+              size_t subexpr_end = push_state(nfa);
+              size_t end = push_state(nfa);
 
               nfa.states[subexpr_start].insert({ subexpr_end, label });
               nfa.states[subexpr_end].insert({ subexpr_start, Edge_Eps });
@@ -70,7 +106,7 @@ parse_next_level(ENFA &nfa)
             }
           else
             {
-              size_t end = push_node(nfa);
+              size_t end = push_state(nfa);
 
               nfa.states[left.end].insert({ end, label });
               left.end = end;
@@ -101,8 +137,8 @@ parse_pattern_aux(ENFA &nfa)
       ++at;
       StatePair right = parse_next_level(nfa);
 
-      size_t start = push_node(nfa);
-      size_t end = push_node(nfa);
+      size_t start = push_state(nfa);
+      size_t end = push_state(nfa);
 
       nfa.states[start].insert({ left.start, Edge_Eps });
       nfa.states[start].insert({ right.start, Edge_Eps });
@@ -125,55 +161,19 @@ parse_pattern(const char *str)
   StatePair regexp = parse_pattern_aux(nfa);
   nfa.start = regexp.start;
   nfa.end = regexp.end;
-
-  nfa.closures.resize(nfa.states.size());
+  compute_closures(nfa);
 
   return nfa;
 }
 
 void
-compute_closures_aux(ENFA &nfa, vector<bool> &visited, size_t node_idx)
-{
-  visited[node_idx] = true;
-
-  GraphNode &edges = nfa.states[node_idx];
-
-  for (auto node: edges)
-    if (!visited[node.dst] && node.label == Edge_Eps)
-      compute_closures_aux(nfa, visited, node.dst);
-
-  ENFAclosure &closure = nfa.closures[node_idx];
-  closure.insert(node_idx);
-
-  for (auto node: edges)
-    {
-      if (node.label == Edge_Eps)
-        {
-          auto &set = nfa.closures[node.dst];
-          closure.insert(set.begin(), set.end());
-        }
-    }
-}
-
-void
-compute_closures(ENFA &nfa)
-{
-  vector<bool> visited;
-  visited.resize(nfa.states.size());
-
-  for (size_t i = 0; i < nfa.states.size(); i++)
-    if (!visited[i])
-      compute_closures_aux(nfa, visited, i);
-}
-
-void
-insert_closure(std::set<size_t> &set, std::set<size_t> &closure)
+insert_closure(std::set<size_t> &set, const std::set<size_t> &closure)
 {
   set.insert(closure.begin(), closure.end());
 }
 
 size_t
-find_repeating_state(vector<set<size_t>> &states)
+find_repeating_state(const vector<set<size_t>> &states)
 {
   for (size_t i = 0; i + 1 < states.size(); i++)
     if (states[i] == states.back())
@@ -183,33 +183,32 @@ find_repeating_state(vector<set<size_t>> &states)
 }
 
 DFA
-create_dfa_from_regexp(const char *pattern)
+convert_enfa_to_dfa(const ENFA &nfa, const set<size_t> &initial_states)
 {
-  ENFA nfa = parse_pattern(pattern);
-  compute_closures(nfa);
   DFA dfa;
   dfa.states.push_back({ });
-
   vector<set<size_t>> dfa_states;
   dfa_states.push_back({ });
-  insert_closure(dfa_states[0], nfa.closures[nfa.start]);
+
+  for (size_t state_idx: initial_states)
+    insert_closure(dfa_states[0], nfa.closures[state_idx]);
 
   for (size_t i = 0; i < dfa_states.size(); i++)
     {
       set<char> labels;
 
-      for (size_t node_idx: dfa_states[i])
-        for (auto node: nfa.states[node_idx])
-          if (node.label != Edge_Eps)
-            labels.insert(node.label);
+      for (size_t state_idx: dfa_states[i])
+        for (auto state: nfa.states[state_idx])
+          if (state.label != Edge_Eps)
+            labels.insert(state.label);
 
       for (char label: labels)
         {
           dfa_states.push_back({ });
 
-          for (size_t node_idx: dfa_states[i])
+          for (size_t state_idx: dfa_states[i])
             {
-              auto &set = nfa.states[node_idx];
+              auto &set = nfa.states[state_idx];
 
               for (auto it = set.lower_bound({ 0, label });
                    it != set.end() && it->label == label;
@@ -232,15 +231,24 @@ create_dfa_from_regexp(const char *pattern)
             }
         }
 
-      for (size_t node_idx: dfa_states[i])
+      for (size_t state_idx: dfa_states[i])
         {
-          if (node_idx == nfa.end)
+          if (state_idx == nfa.end)
             {
               dfa.final_states.insert(i);
               break;
             }
         }
     }
+
+  return dfa;
+}
+
+DFA
+create_dfa_from_regexp(const char *pattern)
+{
+  ENFA nfa = parse_pattern(pattern);
+  DFA dfa = convert_enfa_to_dfa(nfa, { nfa.start });
 
   return dfa;
 }
