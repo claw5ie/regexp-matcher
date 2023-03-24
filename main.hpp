@@ -1,10 +1,6 @@
 #ifndef MAIN_HPP
 #define MAIN_HPP
 
-#include <vector>
-#include <set>
-#include <cstddef>
-
 enum EdgeType
   {
     Edge_Eps = -1,

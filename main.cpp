@@ -1,11 +1,15 @@
-#include "main.hpp"
 #include <iostream>
+#include <vector>
+#include <set>
+
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
 #include <cstdbool>
 #include <cstdint>
 #include <cassert>
+
+#include "main.hpp"
 
 using namespace std;
 
@@ -29,39 +33,43 @@ push_state(ENFA &nfa)
 }
 
 void
-compute_closures_aux(ENFA &nfa, vector<bool> &visited, size_t state_idx)
+insert_closure(std::set<size_t> &set,
+               const std::set<size_t> &closure)
 {
-  visited[state_idx] = true;
-
-  GraphState &edges = nfa.states[state_idx];
-
-  for (auto state: edges)
-    if (!visited[state.dst] && state.label == Edge_Eps)
-      compute_closures_aux(nfa, visited, state.dst);
-
-  ENFAclosure &closure = nfa.closures[state_idx];
-  closure.insert(state_idx);
-
-  for (auto state: edges)
-    {
-      if (state.label == Edge_Eps)
-        {
-          auto &set = nfa.closures[state.dst];
-          closure.insert(set.begin(), set.end());
-        }
-    }
+  set.insert(closure.begin(), closure.end());
 }
 
 void
 compute_closures(ENFA &nfa)
 {
   nfa.closures.resize(nfa.states.size());
-  vector<bool> visited;
-  visited.resize(nfa.states.size());
-
   for (size_t i = 0; i < nfa.states.size(); i++)
-    if (!visited[i])
-      compute_closures_aux(nfa, visited, i);
+    nfa.closures[i].insert(i);
+
+  bool was_changed = false;
+
+  // Perform fixed point iteration method: insert closures
+  // until all sets are stabilized.
+  do
+    {
+      was_changed = false;
+
+      for (size_t i = 0; i < nfa.states.size(); i++)
+        {
+          auto &state = nfa.states[i];
+          for (auto it = state.lower_bound({ 0, Edge_Eps });
+               it != state.end() && it->label == Edge_Eps;
+               it++)
+            {
+              auto &closure = nfa.closures[i];
+              size_t old_count = closure.size();
+              insert_closure(closure, nfa.closures[it->dst]);
+              if (old_count != closure.size())
+                was_changed = true;
+            }
+        }
+    }
+  while (was_changed);
 }
 
 static const char *at;
@@ -166,12 +174,6 @@ parse_pattern(const char *str)
   return nfa;
 }
 
-void
-insert_closure(std::set<size_t> &set, const std::set<size_t> &closure)
-{
-  set.insert(closure.begin(), closure.end());
-}
-
 size_t
 find_repeating_state(const vector<set<size_t>> &states)
 {
@@ -183,7 +185,8 @@ find_repeating_state(const vector<set<size_t>> &states)
 }
 
 DFA
-convert_enfa_to_dfa(const ENFA &nfa, const set<size_t> &initial_states)
+convert_enfa_to_dfa(const ENFA &nfa,
+                    const set<size_t> &initial_states)
 {
   DFA dfa;
   dfa.states.push_back({ });
@@ -253,32 +256,61 @@ create_dfa_from_regexp(const char *pattern)
   return dfa;
 }
 
+bool
+match(DFA &dfa, const char *string)
+{
+  size_t current = 0;
+
+  for (; *string != '\0'; string++)
+    {
+      auto it = dfa.states[current].lower_bound({ 0, *string });
+      if (it == dfa.states[current].end() || it->label != *string)
+        return false;
+
+      current = it->dst;
+    }
+
+  return dfa.final_states.find(current) != dfa.final_states.end();
+}
+
 int
 main(int argc, char **argv)
 {
   DFA dfa = create_dfa_from_regexp(argc <= 1 ? "b|a" : argv[1]);
 
-  cout << "final states: ";
+  if (argc >= 3)
+    {
+      for (int i = 2; i < argc; i++)
+        {
+          cout << argv[i] << ": "
+               << (match(dfa, argv[i]) ? "accepted" : "rejected")
+               << "\n";
+        }
+
+      cout << '\n';
+    }
+
+  cout << "DFA:\n    final states: ";
   for (size_t state: dfa.final_states)
     cout << state << ' ';
   cout << '\n' << '\n';
 
   for (size_t i = 0; i < dfa.states.size(); i++)
     for (auto edge: dfa.states[i])
-      printf("%zu - %c -> %zu\n", i, edge.label, edge.dst);
+      printf("    %zu - %c -> %zu\n", i, edge.label, edge.dst);
 
   // Code for ENFA debugging
-  // ENFA nfa = parse_pattern(argc <= 1 ? "b|a" : argv[1]);
+  ENFA nfa = parse_pattern(argc <= 1 ? "b|a" : argv[1]);
 
-  // cout << "initial state: "
-  //      << nfa.start
-  //      << "\nfinal state:   "
-  //      << nfa.end
-  //      << "\nstate count:   "
-  //      << nfa.states.size()
-  //      << "\n\n";
+  cout << "ENFA:\n    initial state: "
+       << nfa.start
+       << "\n    final state:   "
+       << nfa.end
+       << "\n    state count:   "
+       << nfa.states.size()
+       << "\n\n";
 
-  // for (size_t i = 0; i < nfa.states.size(); i++)
-  //   for (auto edge: nfa.states[i])
-  //     printf("%zu - %c -> %zu\n", i, edge.label == -1 ? 'e' : edge.label, edge.dst);
+  for (size_t i = 0; i < nfa.states.size(); i++)
+    for (auto edge: nfa.states[i])
+      printf("    %zu - %c -> %zu\n", i, edge.label == -1 ? 'e' : edge.label, edge.dst);
 }
