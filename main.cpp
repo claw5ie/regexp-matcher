@@ -75,52 +75,39 @@ compute_closures(ENFA &nfa)
 static const char *at;
 
 StatePair
-parse_pattern_aux(ENFA &nfa);
+parse_option(ENFA &nfa);
 
 StatePair
-parse_next_level(ENFA &nfa)
+parse_highest_level(ENFA &nfa)
 {
   StatePair left;
 
   if (*at == '(')
     {
       ++at;
-      left = parse_pattern_aux(nfa);
-      assert(*at == ')');
+      left = parse_option(nfa);
+      if (*at != ')')
+        {
+          cerr << "error: expected closing parenthesis at \'"
+               << at
+               << "\'.\n";
+          exit(EXIT_FAILURE);
+        }
+      ++at;
+    }
+  else if (*at != ')' && *at != '|' && *at != '*')
+    {
+      left.start = push_state(nfa);
+      left.end = push_state(nfa);
+      nfa.states[left.start].insert({ left.end, *at });
       ++at;
     }
   else
     {
-      left.start = left.end = push_state(nfa);
-
-      while (*at != '\0' && *at != '|' && *at != ')')
-        {
-          char label = *at;
-
-          if (at[1] == '*')
-            {
-              size_t const subexpr_start = left.end;
-              size_t subexpr_end = push_state(nfa);
-              size_t end = push_state(nfa);
-
-              nfa.states[subexpr_start].insert({ subexpr_end, label });
-              nfa.states[subexpr_end].insert({ subexpr_start, Edge_Eps });
-              nfa.states[subexpr_start].insert({ end, Edge_Eps });
-              nfa.states[subexpr_end].insert({ end, Edge_Eps });
-              left.end = end;
-
-              while (*++at == '*')
-                ;
-            }
-          else
-            {
-              size_t end = push_state(nfa);
-
-              nfa.states[left.end].insert({ end, label });
-              left.end = end;
-              ++at;
-            }
-        }
+      cerr << "error: invalid expression starting at \'"
+           << at
+           << "\'.\n";
+      exit(EXIT_FAILURE);
     }
 
   if (*at == '*')
@@ -136,14 +123,29 @@ parse_next_level(ENFA &nfa)
 }
 
 StatePair
-parse_pattern_aux(ENFA &nfa)
+parse_concat(ENFA &nfa)
 {
-  StatePair left = parse_next_level(nfa);
+  StatePair left = parse_highest_level(nfa);
+
+  while (*at != '\0' && *at != '|' && *at != ')')
+    {
+      StatePair right = parse_highest_level(nfa);
+      nfa.states[left.end].insert({ right.start, Edge_Eps });
+      left.end = right.end;
+    }
+
+  return left;
+}
+
+StatePair
+parse_option(ENFA &nfa)
+{
+  StatePair left = parse_concat(nfa);
 
   while (*at == '|')
     {
       ++at;
-      StatePair right = parse_next_level(nfa);
+      StatePair right = parse_concat(nfa);
 
       size_t start = push_state(nfa);
       size_t end = push_state(nfa);
@@ -166,7 +168,8 @@ parse_pattern(const char *str)
   nfa.states.reserve(32);
 
   at = str;
-  StatePair regexp = parse_pattern_aux(nfa);
+  StatePair regexp = parse_option(nfa);
+  assert(*at == '\0');
   nfa.start = regexp.start;
   nfa.end = regexp.end;
   compute_closures(nfa);
@@ -185,16 +188,14 @@ find_repeating_state(const vector<set<size_t>> &states)
 }
 
 DFA
-convert_enfa_to_dfa(const ENFA &nfa,
-                    const set<size_t> &initial_states)
+convert_enfa_to_dfa(const ENFA &nfa, size_t initial_state)
 {
   DFA dfa;
   dfa.states.push_back({ });
   vector<set<size_t>> dfa_states;
   dfa_states.push_back({ });
 
-  for (size_t state_idx: initial_states)
-    insert_closure(dfa_states[0], nfa.closures[state_idx]);
+  insert_closure(dfa_states[0], nfa.closures[initial_state]);
 
   for (size_t i = 0; i < dfa_states.size(); i++)
     {
@@ -248,12 +249,9 @@ convert_enfa_to_dfa(const ENFA &nfa,
 }
 
 DFA
-create_dfa_from_regexp(const char *pattern)
+convert_enfa_to_dfa(ENFA &nfa)
 {
-  ENFA nfa = parse_pattern(pattern);
-  DFA dfa = convert_enfa_to_dfa(nfa, { nfa.start });
-
-  return dfa;
+  return convert_enfa_to_dfa(nfa, nfa.start);
 }
 
 bool
@@ -276,7 +274,9 @@ match(DFA &dfa, const char *string)
 int
 main(int argc, char **argv)
 {
-  DFA dfa = create_dfa_from_regexp(argc <= 1 ? "b|a" : argv[1]);
+  const char *regex_string = argc <= 1 ? "b|a" : argv[1];
+  ENFA nfa = parse_pattern(regex_string);
+  DFA dfa = convert_enfa_to_dfa(nfa);
 
   if (argc >= 3)
     {
@@ -290,17 +290,15 @@ main(int argc, char **argv)
       cout << '\n';
     }
 
-  cout << "DFA:\n    final states: ";
+  cout << "Regex: " << regex_string << '\n';
+  cout << "DFA:\n    initial state: 0\n    final states:  ";
   for (size_t state: dfa.final_states)
     cout << state << ' ';
-  cout << '\n' << '\n';
+  cout << "\n\n";
 
   for (size_t i = 0; i < dfa.states.size(); i++)
     for (auto edge: dfa.states[i])
-      printf("    %zu - %c -> %zu\n", i, edge.label, edge.dst);
-
-  // Code for ENFA debugging
-  ENFA nfa = parse_pattern(argc <= 1 ? "b|a" : argv[1]);
+      printf("    %-2zu - %c -> %zu\n", i, edge.label, edge.dst);
 
   cout << "ENFA:\n    initial state: "
        << nfa.start
@@ -312,5 +310,5 @@ main(int argc, char **argv)
 
   for (size_t i = 0; i < nfa.states.size(); i++)
     for (auto edge: nfa.states[i])
-      printf("    %zu - %c -> %zu\n", i, edge.label == -1 ? 'e' : edge.label, edge.dst);
+      printf("    %-2zu - %c -> %zu\n", i, edge.label == -1 ? 'e' : edge.label, edge.dst);
 }
