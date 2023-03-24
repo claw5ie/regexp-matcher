@@ -1,4 +1,5 @@
 #include <iostream>
+#include <iomanip>
 #include <vector>
 #include <set>
 
@@ -95,7 +96,7 @@ parse_highest_level(ENFA &nfa)
         }
       ++at;
     }
-  else if (*at != ')' && *at != '|' && *at != '*')
+  else if (*at != '\0' && *at != ')' && *at != '|' && *at != '*')
     {
       left.start = push_state(nfa);
       left.end = push_state(nfa);
@@ -161,6 +162,19 @@ parse_option(ENFA &nfa)
   return left;
 }
 
+StatePair
+parse_pattern(ENFA &nfa, const char *str)
+{
+  StatePair regexp;
+
+  if (*str != '\0')
+    regexp = parse_option(nfa);
+  else
+    regexp.start = regexp.end = push_state(nfa);
+
+  return regexp;
+}
+
 ENFA
 parse_pattern(const char *str)
 {
@@ -168,7 +182,7 @@ parse_pattern(const char *str)
   nfa.states.reserve(32);
 
   at = str;
-  StatePair regexp = parse_option(nfa);
+  StatePair regexp = parse_pattern(nfa, str);
   assert(*at == '\0');
   nfa.start = regexp.start;
   nfa.end = regexp.end;
@@ -280,12 +294,26 @@ main(int argc, char **argv)
 
   if (argc >= 3)
     {
-      for (int i = 2; i < argc; i++)
+      argv += 2;
+      argc -= 2;
+
+      std::vector<bool> results;
+      results.resize(argc);
+
+      size_t max_len = 0;
+      for (int i = 0; i < argc; i++)
         {
-          cout << argv[i] << ": "
-               << (match(dfa, argv[i]) ? "accepted" : "rejected")
-               << "\n";
+          results[i] = match(dfa, argv[i]);
+
+          size_t len = strlen(argv[i]);
+          if (max_len < len)
+            max_len = len;
         }
+
+      for (size_t i = 0; i < results.size(); i++)
+        cout << left << setw(max_len) << argv[i] << ": "
+             << (results[i] ? "accepted" : "rejected")
+             << "\n";
 
       cout << '\n';
     }
