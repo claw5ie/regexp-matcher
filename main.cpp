@@ -98,6 +98,7 @@ parse_highest_level(ENFA &nfa)
     }
   else if (*at != '\0' && *at != ')' && *at != '|' && *at != '*')
     {
+      at += (*at == '\\');
       left.start = push_state(nfa);
       left.end = push_state(nfa);
       nfa.states[left.start].insert({ left.end, *at });
@@ -285,6 +286,27 @@ match(DFA &dfa, const char *string)
   return dfa.final_states.find(current) != dfa.final_states.end();
 }
 
+const char *
+label_to_cstring(char label)
+{
+  static char buffer[4];
+
+  if (label != Edge_Eps)
+    {
+      buffer[0] = label;
+      buffer[1] = '\0';
+    }
+  else
+    {
+      buffer[0] = 'e';
+      buffer[1] = 'p';
+      buffer[2] = 's';
+      buffer[3] = '\0';
+    }
+
+  return buffer;
+}
+
 int
 main(int argc, char **argv)
 {
@@ -338,5 +360,5 @@ main(int argc, char **argv)
 
   for (size_t i = 0; i < nfa.states.size(); i++)
     for (auto edge: nfa.states[i])
-      printf("    %-2zu - %c -> %zu\n", i, edge.label == -1 ? 'e' : edge.label, edge.dst);
+      printf("    %-2zu - %-3s -> %zu\n", i, label_to_cstring(edge.label), edge.dst);
 }
