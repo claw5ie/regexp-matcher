@@ -114,10 +114,46 @@ parse_highest_level(ENFA &nfa)
 
   if (*at == '*')
     {
-      nfa.states[left.start].insert({ left.end, Edge_Eps });
-      nfa.states[left.end].insert({ left.start, Edge_Eps });
+      size_t new_start = push_state(nfa);
+      size_t new_end = push_state(nfa);
+      nfa.states[new_start].insert({ left.start, Edge_Eps });
+      nfa.states[new_start].insert({ new_end, Edge_Eps });
+      nfa.states[left.end].insert({ new_end, Edge_Eps });
+      nfa.states[new_end].insert({ new_start, Edge_Eps });
 
-      while (*++at == '*')
+      left.start = new_start;
+      left.end = new_end;
+
+      ++at;
+      while (*at == '*' || *at == '?')
+        ;
+    }
+  else if (*at == '?')
+    {
+      size_t new_start = push_state(nfa);
+      size_t new_end = push_state(nfa);
+      nfa.states[new_start].insert({ left.start, Edge_Eps });
+      nfa.states[new_start].insert({ new_end, Edge_Eps });
+      nfa.states[left.end].insert({ new_end, Edge_Eps });
+
+      left.start = new_start;
+      left.end = new_end;
+
+      while (*++at == '?')
+        ;
+    }
+  else if (*at == '+') // maybe should replace "r+?" by "r*"?
+    {
+      size_t new_start = push_state(nfa);
+      size_t new_end = push_state(nfa);
+      nfa.states[new_start].insert({ left.start, Edge_Eps });
+      nfa.states[left.end].insert({ new_end, Edge_Eps });
+      nfa.states[new_end].insert({ new_start, Edge_Eps });
+
+      left.start = new_start;
+      left.end = new_end;
+
+      while (*++at == '+')
         ;
     }
 
