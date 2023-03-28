@@ -341,10 +341,13 @@ main(int argc, char **argv)
     }
 
   cout << "Regex: " << regex_string << '\n';
-  cout << "DFA:\n    initial state: 0\n    final states:  ";
+  cout << "DFA:\n    initial state: 0"
+              "\n    final states:  ";
   for (size_t state: dfa.final_states)
     cout << state << ' ';
-  cout << "\n\n";
+  cout << "\n    state count:   "
+       << dfa.states.size()
+       << "\n\n";
 
   for (size_t i = 0; i < dfa.states.size(); i++)
     for (auto edge: dfa.states[i])
