@@ -2,9 +2,9 @@
 #define MAIN_HPP
 
 enum EdgeType
-  {
-    Edge_Eps = -1,
-  };
+{
+  Edge_Eps = -1,
+};
 
 struct GraphEdge
 {
