@@ -2,6 +2,7 @@
 #include <iomanip>
 #include <vector>
 #include <set>
+#include <limits>
 
 #include <cstdio>
 #include <cstdlib>
@@ -12,27 +13,14 @@
 
 #include "main.hpp"
 
-using namespace std;
-
-bool operator<(GraphEdge e0, GraphEdge e1)
+StateIndex push_state(ENFA &nfa)
 {
-  if (e0.label == e1.label)
-    return e0.dst < e1.dst;
-  else
-    return e0.label < e1.label;
-}
-
-size_t push_state(ENFA &nfa)
-{
-  size_t state_idx = nfa.states.size();
-
+  auto state_idx = nfa.states.size();
   nfa.states.push_back({ });
-
   return state_idx;
 }
 
-void insert_closure(std::set<size_t> &set,
-                    const std::set<size_t> &closure)
+void insert_closure(StateSubset &set, const StateSubset &closure)
 {
   set.insert(closure.begin(), closure.end());
 }
@@ -40,25 +28,25 @@ void insert_closure(std::set<size_t> &set,
 void compute_closures(ENFA &nfa)
 {
   nfa.closures.resize(nfa.states.size());
-  for (size_t i = 0; i < nfa.states.size(); i++)
-    nfa.closures[i].insert(i);
+  // Closure of a set contains the set itself.
+  for (StateIndex idx = 0; idx < nfa.states.size(); idx++)
+    nfa.closures[idx].insert(idx);
 
-  bool was_changed = false;
+  auto was_changed = false;
 
-  // Perform fixed point iteration method: insert closures
-  // until all sets are stabilized.
+  // Perform fixed point iteration method: insert closures until all sets are stabilized.
   do
   {
     was_changed = false;
 
-    for (size_t i = 0; i < nfa.states.size(); i++)
+    for (StateIndex idx = 0; idx < nfa.states.size(); idx++)
     {
-      auto &state = nfa.states[i];
-      for (auto it = state.lower_bound({ 0, Edge_Eps });
+      auto &state = nfa.states[idx];
+      for (auto it = state.lower_bound({ .dst = lowest_state_index, .label = Edge_Eps });
            it != state.end() && it->label == Edge_Eps;
            it++)
       {
-        auto &closure = nfa.closures[i];
+        auto &closure = nfa.closures[idx];
         size_t old_count = closure.size();
         insert_closure(closure, nfa.closures[it->dst]);
         if (old_count != closure.size())
@@ -83,9 +71,9 @@ StatePair parse_highest_level(ENFA &nfa)
     left = parse_option(nfa);
     if (*at != ')')
     {
-      cerr << "error: expected closing parenthesis at \'"
-           << at
-           << "\'.\n";
+      std::cerr << "error: expected closing parenthesis at \'"
+                << at
+                << "\'.\n";
       exit(EXIT_FAILURE);
     }
     ++at;
@@ -95,73 +83,78 @@ StatePair parse_highest_level(ENFA &nfa)
     at += (*at == '\\');
     left.start = push_state(nfa);
     left.end = push_state(nfa);
-    nfa.states[left.start].insert({ left.end, *at });
+    nfa.states[left.start].insert({ .dst = left.end, .label = *at });
     ++at;
   }
   else
   {
-    cerr << "error: invalid expression starting at \'"
-         << at
-         << "\'.\n";
+    std::cerr << "error: invalid expression starting at \'"
+              << at
+              << "\'.\n";
     exit(EXIT_FAILURE);
   }
 
-  if (*at == '*')
+  do
   {
-    size_t new_start = push_state(nfa);
-    size_t new_end = push_state(nfa);
-    nfa.states[new_start].insert({ left.start, Edge_Eps });
-    nfa.states[new_start].insert({ new_end, Edge_Eps });
-    nfa.states[left.end].insert({ new_end, Edge_Eps });
-    nfa.states[new_end].insert({ new_start, Edge_Eps });
+    switch (*at)
+    {
+    case '*':
+    {
+      ++at;
 
-    left.start = new_start;
-    left.end = new_end;
+      auto new_start = push_state(nfa);
+      auto new_end = push_state(nfa);
+      nfa.states[new_start].insert({ .dst = left.start, .label = Edge_Eps });
+      nfa.states[new_start].insert({ .dst = new_end,    .label = Edge_Eps });
+      nfa.states[left.end ].insert({ .dst = new_end,    .label = Edge_Eps });
+      nfa.states[new_end  ].insert({ .dst = new_start,  .label = Edge_Eps });
 
-    ++at;
-    while (*at == '*' || *at == '?')
-      ;
-  }
-  else if (*at == '?')
-  {
-    size_t new_start = push_state(nfa);
-    size_t new_end = push_state(nfa);
-    nfa.states[new_start].insert({ left.start, Edge_Eps });
-    nfa.states[new_start].insert({ new_end, Edge_Eps });
-    nfa.states[left.end].insert({ new_end, Edge_Eps });
+      left.start = new_start;
+      left.end = new_end;
+    } break;
+    case '?':
+    {
+      ++at;
 
-    left.start = new_start;
-    left.end = new_end;
+      auto new_start = push_state(nfa);
+      auto new_end = push_state(nfa);
+      nfa.states[new_start].insert({ .dst = left.start, .label = Edge_Eps });
+      nfa.states[new_start].insert({ .dst = new_end,    .label = Edge_Eps });
+      nfa.states[left.end ].insert({ .dst = new_end,    .label = Edge_Eps });
 
-    while (*++at == '?')
-      ;
-  }
-  else if (*at == '+') // maybe should replace "r+?" by "r*"?
-  {
-    size_t new_start = push_state(nfa);
-    size_t new_end = push_state(nfa);
-    nfa.states[new_start].insert({ left.start, Edge_Eps });
-    nfa.states[left.end].insert({ new_end, Edge_Eps });
-    nfa.states[new_end].insert({ new_start, Edge_Eps });
+      left.start = new_start;
+      left.end = new_end;
+    } break;
+    case '+': // Maybe should replace "r+?" by "r*"?
+    {
+      ++at;
 
-    left.start = new_start;
-    left.end = new_end;
+      auto new_start = push_state(nfa);
+      auto new_end = push_state(nfa);
+      nfa.states[new_start].insert({ .dst = left.start, .label = Edge_Eps });
+      nfa.states[left.end ].insert({ .dst = new_end,    .label = Edge_Eps });
+      nfa.states[new_end  ].insert({ .dst = new_start,  .label = Edge_Eps });
 
-    while (*++at == '+')
-      ;
-  }
+      left.start = new_start;
+      left.end = new_end;
+    }
+    default:
+      goto finish_parsing_postfix_unary_ops;
+    }
+  } while (true);
+finish_parsing_postfix_unary_ops: {}
 
   return left;
 }
 
 StatePair parse_concat(ENFA &nfa)
 {
-  StatePair left = parse_highest_level(nfa);
+  auto left = parse_highest_level(nfa);
 
   while (*at != '\0' && *at != '|' && *at != ')')
   {
-    StatePair right = parse_highest_level(nfa);
-    nfa.states[left.end].insert({ right.start, Edge_Eps });
+    auto right = parse_highest_level(nfa);
+    nfa.states[left.end].insert({ .dst = right.start, .label = Edge_Eps });
     left.end = right.end;
   }
 
@@ -170,20 +163,21 @@ StatePair parse_concat(ENFA &nfa)
 
 StatePair parse_option(ENFA &nfa)
 {
-  StatePair left = parse_concat(nfa);
+  auto left = parse_concat(nfa);
 
   while (*at == '|')
   {
     ++at;
-    StatePair right = parse_concat(nfa);
 
-    size_t start = push_state(nfa);
-    size_t end = push_state(nfa);
+    auto right = parse_concat(nfa);
 
-    nfa.states[start].insert({ left.start, Edge_Eps });
-    nfa.states[start].insert({ right.start, Edge_Eps });
-    nfa.states[left.end].insert({ end, Edge_Eps });
-    nfa.states[right.end].insert({ end, Edge_Eps });
+    auto start = push_state(nfa);
+    auto end = push_state(nfa);
+
+    nfa.states[start    ].insert({ .dst = left.start,  .label = Edge_Eps });
+    nfa.states[start    ].insert({ .dst = right.start, .label = Edge_Eps });
+    nfa.states[left.end ].insert({ .dst = end,         .label = Edge_Eps });
+    nfa.states[right.end].insert({ .dst = end,         .label = Edge_Eps });
     left.start = start;
     left.end = end;
   }
@@ -205,80 +199,85 @@ StatePair parse_pattern(ENFA &nfa, const char *str)
 
 ENFA parse_pattern(const char *str)
 {
+  at = str;
+
   ENFA nfa;
   nfa.states.reserve(32);
-
-  at = str;
-  StatePair regexp = parse_pattern(nfa, str);
+  auto regexp = parse_pattern(nfa, str);
   assert(*at == '\0');
   nfa.start = regexp.start;
   nfa.end = regexp.end;
-  compute_closures(nfa);
 
   return nfa;
 }
 
-size_t find_repeating_state(const vector<set<size_t>> &states)
+DFA convert_enfa_to_dfa(ENFA &nfa, StateIndex initial_state)
 {
-  for (size_t i = 0; i + 1 < states.size(); i++)
-    if (states[i] == states.back())
-      return i;
+  using Subsets = std::vector<StateSubset>;
 
-  return -1;
-}
-
-DFA convert_enfa_to_dfa(const ENFA &nfa, size_t initial_state)
-{
   DFA dfa;
+  Subsets subsets; // Subsets of NFA states corresponding to each DFA states.
+
+  compute_closures(nfa);
+
   dfa.states.push_back({ });
-  vector<set<size_t>> dfa_states;
-  dfa_states.push_back({ });
+  subsets.push_back({ });
 
-  insert_closure(dfa_states[0], nfa.closures[initial_state]);
+  insert_closure(subsets[0], nfa.closures[initial_state]);
 
-  for (size_t i = 0; i < dfa_states.size(); i++)
+  auto find_repeating_state =
+    [&subsets]() -> StateIndex
+    {
+      for (StateIndex idx = 0; idx + 1 < subsets.size(); idx++)
+        if (subsets[idx] == subsets.back())
+          return idx;
+
+      return -1;
+    };
+
+  for (StateIndex idx = 0; idx < subsets.size(); idx++)
   {
-    set<char> labels;
+    // All possible transitions from current DFA state.
+    std::set<char> labels;
 
-    for (size_t state_idx: dfa_states[i])
+    for (auto state_idx: subsets[idx])
       for (auto state: nfa.states[state_idx])
         if (state.label != Edge_Eps)
           labels.insert(state.label);
 
-    for (char label: labels)
+    for (auto label: labels)
     {
-      dfa_states.push_back({ });
+      subsets.push_back({ });
 
-      for (size_t state_idx: dfa_states[i])
+      for (auto state_idx: subsets[idx])
       {
         auto &set = nfa.states[state_idx];
 
-        for (auto it = set.lower_bound({ 0, label });
+        for (auto it = set.lower_bound({ .dst = lowest_state_index, .label = label });
              it != set.end() && it->label == label;
              it++)
-          insert_closure(dfa_states.back(), nfa.closures[it->dst]);
+          insert_closure(subsets.back(), nfa.closures[it->dst]);
       }
 
-      size_t repeating_state
-        = find_repeating_state(dfa_states);
+      auto repeating_state = find_repeating_state();
 
       if (repeating_state != (size_t)-1)
       {
-        dfa_states.pop_back();
-        dfa.states[i].insert({ repeating_state, label });
+        subsets.pop_back();
+        dfa.states[idx].insert({ .dst = repeating_state, .label = label });
       }
       else
       {
         dfa.states.push_back({ });
-        dfa.states[i].insert({ dfa.states.size() - 1, label });
+        dfa.states[idx].insert({ .dst = dfa.states.size() - 1, .label = label });
       }
     }
 
-    for (size_t state_idx: dfa_states[i])
+    for (auto state_idx: subsets[idx])
     {
       if (state_idx == nfa.end)
       {
-        dfa.final_states.insert(i);
+        dfa.final_states.insert(idx);
         break;
       }
     }
@@ -298,7 +297,7 @@ bool match(DFA &dfa, const char *string)
 
   for (; *string != '\0'; string++)
   {
-    auto it = dfa.states[current].lower_bound({ 0, *string });
+    auto it = dfa.states[current].lower_bound({ .dst = lowest_state_index, .label = *string });
     if (it == dfa.states[current].end() || it->label != *string)
       return false;
 
@@ -331,8 +330,8 @@ const char *label_to_cstring(char label)
 int main(int argc, char **argv)
 {
   const char *regex_string = argc <= 1 ? "b|a" : argv[1];
-  ENFA nfa = parse_pattern(regex_string);
-  DFA dfa = convert_enfa_to_dfa(nfa);
+  auto nfa = parse_pattern(regex_string);
+  auto dfa = convert_enfa_to_dfa(nfa);
 
   if (argc >= 3)
   {
@@ -353,35 +352,35 @@ int main(int argc, char **argv)
     }
 
     for (size_t i = 0; i < results.size(); i++)
-      cout << left << setw(max_len) << argv[i] << ": "
-           << (results[i] ? "accepted" : "rejected")
-           << "\n";
+      std::cout << std::left << std::setw(max_len) << argv[i] << ": "
+                << (results[i] ? "accepted" : "rejected")
+                << "\n";
 
-    cout << '\n';
+    std::cout << '\n';
   }
 
-  cout << "Regex: " << regex_string << '\n';
-  cout << "DFA:\n    initial state: 0"
+  std::cout << "Regex: " << regex_string << '\n';
+  std::cout << "DFA:\n    initial state: 0"
     "\n    final states:  ";
-  for (size_t state: dfa.final_states)
-    cout << state << ' ';
-  cout << "\n    state count:   "
-       << dfa.states.size()
-       << "\n\n";
+  for (auto state: dfa.final_states)
+    std::cout << state << ' ';
+  std::cout << "\n    state count:   "
+            << dfa.states.size()
+            << "\n\n";
 
-  for (size_t i = 0; i < dfa.states.size(); i++)
-    for (auto edge: dfa.states[i])
-      printf("    %-2zu - %c -> %zu\n", i, edge.label, edge.dst);
+  for (StateIndex idx = 0; idx < dfa.states.size(); idx++)
+    for (auto edge: dfa.states[idx])
+      printf("    %-2zu - %c -> %zu\n", idx, edge.label, edge.dst);
 
-  cout << "ENFA:\n    initial state: "
-       << nfa.start
-       << "\n    final state:   "
-       << nfa.end
-       << "\n    state count:   "
-       << nfa.states.size()
-       << "\n\n";
+  std::cout << "ENFA:\n    initial state: "
+            << nfa.start
+            << "\n    final state:   "
+            << nfa.end
+            << "\n    state count:   "
+            << nfa.states.size()
+            << "\n\n";
 
-  for (size_t i = 0; i < nfa.states.size(); i++)
-    for (auto edge: nfa.states[i])
-      printf("    %-2zu - %-3s -> %zu\n", i, label_to_cstring(edge.label), edge.dst);
+  for (StateIndex idx = 0; idx < nfa.states.size(); idx++)
+    for (auto edge: nfa.states[idx])
+      printf("    %-2zu - %-3s -> %zu\n", idx, label_to_cstring(edge.label), edge.dst);
 }

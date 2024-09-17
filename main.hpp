@@ -1,36 +1,40 @@
-#ifndef MAIN_HPP
-#define MAIN_HPP
+using StateIndex = size_t;
 
-enum EdgeType
-{
-  Edge_Eps = -1,
-};
+constexpr StateIndex lowest_state_index = std::numeric_limits<StateIndex>::lowest();
+constexpr char Edge_Eps = -1;
 
-struct GraphEdge
+struct Edge
 {
-  size_t dst;
+  StateIndex dst;
   char label;
+
+  bool operator<(Edge e1) const
+  {
+    Edge e0 = *this;
+    if (e0.label == e1.label)
+      return e0.dst < e1.dst;
+    else
+      return e0.label < e1.label;
+  }
 };
 
-using GraphState = std::set<GraphEdge>;
-using ENFAclosure = std::set<size_t>;
+using State = std::set<Edge>;
+using StateSubset = std::set<StateIndex>;
 
 struct ENFA
 {
-  size_t start, end;
-  std::vector<GraphState> states;
-  std::vector<ENFAclosure> closures;
+  StateIndex start, end;
+  std::vector<State> states;
+  std::vector<StateSubset> closures;
 };
 
 struct DFA
 {
-  std::vector<GraphState> states;
-  std::set<size_t> final_states;
+  std::vector<State> states;
+  StateSubset final_states;
 };
 
 struct StatePair
 {
-  size_t start, end;
+  StateIndex start, end;
 };
-
-#endif // MAIN_HPP
